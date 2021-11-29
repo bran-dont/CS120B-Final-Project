@@ -8,148 +8,187 @@
  *	code, is my own original work.
  */
 #include <avr/io.h>
-#include <stdlib.h> // used for rand #
-#include <math.h> // pow
-#include "timer.h"
-#include "scheduler.h"
+#include <stdlib.h> 	// used for rand #
+#include <math.h> 		// pow
+#include "io.h"			// LCD
+#include "timer.h"		// timer
+#include "scheduler.h"	// task struct
 #ifdef _SIMULATE_
 #include "simAVRHeader.h"
 #endif
 
-void transmit_pdata(unsigned char data) {
-	PORTA |= 0x10;
+/*
+	for PORTB and PORTD
+	PIN0 - SER
+	PIN1 - Output enable (output Storage Reg)
+	PIN2 - RCLK
+	PIN3 - SRCLK
+	PIN4 - SRCLR
+*/
+
+void ADC_init() { // 527 is middle for joystick
+	ADCSRA |= (1 << ADEN) | (1 << ADSC) | (1 << ADATE);
+	// ADEN: setting this bit enables analog-to-digital conversion.
+	// ADSC: setting this bit starts the first conversion.
+	// ADATE: setting this bit enables auto-triggering. Since we are in Free Running Mode,
+	//			a new conversion will trigger whenever the previous conversion completes.
+}
+
+
+void transmit_cdata(unsigned char data) {
+	unsigned char inverse = ~data;
+	PORTB |= 0x02; // OUTEN = 1, turns off storage register output until reg is ready
+	
 	int i;
     for (i = 0; i < 8 ; ++i) {
-        // Sets SRCLR to 1 allowing data to be set
-        // Also clears SRCLK in preparation of sending data
-        PORTA = 0x08;
-        // set SER = next bit of data to be sent.
-        PORTA |= ((data >> i) & 0x01);
-        // set SRCLK = 1. Rising edge shifts next bit of data into the shift register
-        PORTA |= 0x02;  
+        PORTB |= 0x10; // SRCLR = 1, allows data to be set
+        PORTB &= 0xF0; // SRCLK = 0, to prepare for sending data
+        
+        //PORTB = 0x10;
+        
+        PORTB |= ((inverse >> i) & 0x01); // SER = next data bit to be sent
+        
+        PORTB |= 0x08; // SRCLK = 1, rising edge shifts SER into shift reg  
     }
-    // set RCLK = 1. Rising edge copies data from “Shift” register to “Storage” register
-    PORTA &= 0xEF;
-    PORTA |= 0x04;
-    // clears all lines in preparation of a new transmission
-    PORTA = 0x00;
+    PORTB |= 0x04; // RCLK = 1, rising edge copies data from shift reg to storage reg
+    
+    PORTB &= 0xC0; // PB5..0 = 0, clears all lines to prep for new data (PB7..6 used for LCD)
+				   // PB1 = 0 also outputs reg to LED matrix (OUTEN = 0)
+	//PORTB = 0x00;
 }
 
 void transmit_rdata(unsigned char data) {
-	PORTB |= 0x10;
+	PORTD |= 0x02; // OUTEN = 1, turns off storage register output until reg is ready
+	
 	int i;
-    for (i = 0; i < 5 ; ++i) {
-        // Sets SRCLR to 1 allowing data to be set
-        // Also clears SRCLK in preparation of sending data
-        PORTB = 0x08;
-        // set SER = next bit of data to be sent.
-        PORTB |= ((data >> i) & 0x01);
-        // set SRCLK = 1. Rising edge shifts next bit of data into the shift register
-        PORTB |= 0x02;  
+    for (i = 0; i < 8 ; ++i) {
+        PORTD |= 0x10; // SRCLR = 1, allows data to be set
+        PORTD &= 0xF0; // SRCLK = 0, to prepare for sending data
+        
+        //PORTD = 0x10;
+        
+        PORTD |= ((data >> i) & 0x01);  // SER = next data bit to be sent
+        
+        PORTD |= 0x08; // SRCLK = 1, rising edge shifts SER into shift reg
     }
-    // set RCLK = 1. Rising edge copies data from “Shift” register to “Storage” register
-    PORTB &= 0xEF;
-    PORTB |= 0x04;
-    // clears all lines in preparation of a new transmission
-    PORTB = 0x00;
+    PORTD |= 0x04; // RCLK = 1, rising edge copies data from shift reg to storage reg
+    
+    PORTD &= 0xC0; // PB5..0 = 0, clears all lines to prep for new data (PB7..6 used for LCD)
+				   // PB1 = 0 also outputs reg to LED matrix (OUTEN = 0)
+				   
+	//PORTD = 0x00;
 }
 
-unsigned char pattern = 0x04; // snake spawn point
-unsigned char row = 0xF7;
-unsigned char length = 1;
-
-enum Snake_States { Move };
-int Snake_Tick(int state) {
-	//static unsigned char pattern = 0x04; // snake spawn point
-	//static unsigned char row = 0xF7;
-	
-	switch(state) {
-		case Move:
-			transmit_pdata(pattern);
-			transmit_rdata(row);
-		break;
-		default:
-		break;
-	}
-	return state;
-}
-
-enum Demo_States {shift};
-int Demo_Tick(int state) {
+//unsigned char col = 0x08;    // LED col
+//unsigned char row = 0x10;    // LED row 
+enum Snake_States { shift };
+int Snake_Tick(int state) { // f7, 02
 	// Local Variables
-	static unsigned char foodLoc;
-		foodLoc = rand() % (40 - length);
-	 
-	static unsigned char fpattern = 0x40;
-	if(fpattern == pattern) {
-		pattern = foodLoc % 8; // snake spawn point
-	}
-	static unsigned char frow = 0xFD;
-	if(frow == row) { frow = (char)(pow(2, foodLoc / 8)); }
-	
-	while(fpattern == pattern && frow == row) { 
-		foodLoc = rand() % (40 - length);
-		fpattern = foodLoc % 8;
-		frow = (char)(pow(2, foodLoc / 8));
-	}
-	
-	//static unsigned char newLoc = rand() % 
-	
-	transmit_pdata(fpattern);
-	transmit_rdata(frow);
-	// 0xFB = 1111 1011 & ~(0001 0000) = 1111 1011 & 1110 1111 = 1110 1011
-	//16 - > 1 000 -> 0 1111
-	return state;
-}
-/*
-int Demo_Tick(int state) {
-
-    // Local Variables
-    static unsigned char pattern = 0x80;	// LED pattern - 0: LED off; 1: LED on
-    static unsigned char row = 0xFE;		// Row(s) displaying pattern. 
-    										// 0: display pattern on row
-    										// 1: do NOT display pattern on row
+    static unsigned char col = 0x08;    // LED pattern - 0: LED off; 1: LED on
+    static unsigned char row = 0x10;      // Row(s) displaying pattern. 
+                            // 0: display pattern on row
+                            // 1: do NOT display pattern on row
+    unsigned short adc = ADC;
+    unsigned short x, y;
+    
     // Transitions
     switch (state) {
         case shift:    
 			break;
         default:    
 			state = shift;
-        	break;
+            break;
     }    
     // Actions
     switch (state) {
-		case shift:    
-			if (row == 0xEF && pattern == 0x01) { // Reset demo 
-                pattern = 0x80;
-                row = 0xFE;
-            } else if (pattern == 0x01) { // Move LED to start of next row
-                pattern = 0x80;
-                row = (row << 1) | 0x01;
-            } else { // Shift LED one spot to the right on current row
-                pattern >>= 1;
-            }
-            transmit_pdata(pattern);
-            transmit_rdata(row);
-        	break;
+		case shift:
+			ADMUX = 0b00001;
+			y = ADC;
+			ADMUX = 0b00010;
+			x = ADC;
+			
+			if(y < 263) {
+				//col = 0xFF;
+				row >>= 1;
+				if(263 < x && x < 790 && row != 0x01) {
+					row >>= 1;
+				}
+			}
+			else if(790 < y) {
+				if(263 < x && x < 790 && row != 0x80) {
+					row <<= 1;
+				}
+			}
+			else { // y in middle region
+				if(x < 263 && col != 0x01) {
+					col >>= 1;
+				}
+				else if(790 < x && col != 0x80) {
+					col <<= 1;
+				}
+			}
+			transmit_cdata(col);
+			transmit_rdata(row);
+			/*
+			ADMUX = 0b00001;
+			if(adc < 263) {
+				if(col != 0x01) {
+					//col >>= 1;
+					y = 527 - adc;
+				}
+				//moved = 1;
+			}
+			else if(adc > 790) {
+				//LCD_WriteData('0');
+				if(col != 0x80){
+					col <<= 1;
+				}
+				//moved = 1;
+			}
+			ADMUX = 0b00010;
+			if(!moved) {
+				if(adc < 263) {
+					if(row != 0x01) {
+						row >>= 1;
+					}
+				}
+				else if(adc > 790) {
+					if(row != 0x80) {
+						row <<= 1;
+					}
+				}
+			}
+            */
+            break;
         default:
-        	transmit_pdata(pattern);
-        	transmit_rdata(row);
-    		break;
+		    break;
     }
-    //transmit_rdata(row);
-    //PORTA = pattern;    // Pattern to display
-    //PORTB = row;        // Row(s) displaying pattern    
+    
     return state;
-}*/
 
+}
+
+enum Output_States { output };
+int Output_Tick(int state) {
+	//transmit_cdata(col);
+    //transmit_rdata(row);
+    
+	return state;
+}
 
 int main(void) {
     /* Insert DDR and PORT initializations */
-    DDRA = 0xFF; PORTA = 0x00;
-	DDRB = 0xFF; PORTB = 0x00;
-	DDRD = 0xFF; PORTD = 0x00;
+    DDRA = 0x00; PORTA = 0xFF; // Joystick input 
+	DDRB = 0xFF; PORTB = 0x00; // LED Matrix output (pattern) and LCD Control Lines
+	DDRC = 0xFF; PORTC = 0x00; // LCD Data Lines
+	DDRD = 0xFF; PORTD = 0x00; // LED Matrix output (row)
+	
     /* Insert your solution below */
+    ADC_init();
+    //LCD_init();
+    //LCD_WriteData('9');
+    //LCD_DisplayString(1, "Hello World");
+    
     static task task1, task2;
     task *tasks[] = { &task1, &task2 }; 
     const unsigned short numTasks = sizeof(tasks)/sizeof(*tasks);
@@ -158,15 +197,15 @@ int main(void) {
     
     // Task 1 (Snake Spot)
     task1.state = shift; 
-    task1.period = period;
+    task1.period = period * 100;
     task1.elapsedTime = task1.period;
     task1.TickFct = &Snake_Tick;
     
-    // Task 1 (Food Spot)
-    task2.state = shift; 
+    // Task 2 (Display Output)
+    task2.state = output;
     task2.period = period;
     task2.elapsedTime = task2.period;
-    task2.TickFct = &Demo_Tick;
+    task2.TickFct = &Output_Tick;
     
     unsigned long GCD = tasks[0]->period;
     for(i = 1; i < numTasks; i++) {
