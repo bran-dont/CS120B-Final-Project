@@ -10,6 +10,7 @@
 #include <avr/io.h>
 #include <stdlib.h> 	// used for rand #
 #include <math.h> 		// pow
+#include <stdio.h>		// printf (short to string)
 #include "io.h"			// LCD
 #include "timer.h"		// timer
 #include "scheduler.h"	// task struct
@@ -79,17 +80,19 @@ void transmit_rdata(unsigned char data) {
 	//PORTD = 0x00;
 }
 
-//unsigned char col = 0x08;    // LED col
-//unsigned char row = 0x10;    // LED row 
+unsigned char col = 0x08;    // LED col
+unsigned char row = 0x10;    // LED row 
 enum Snake_States { shift };
 int Snake_Tick(int state) { // f7, 02
 	// Local Variables
-    static unsigned char col = 0x08;    // LED pattern - 0: LED off; 1: LED on
-    static unsigned char row = 0x10;      // Row(s) displaying pattern. 
+    //static unsigned char col = 0x08;    // LED pattern - 0: LED off; 1: LED on
+    //static unsigned char row = 0x10;      // Row(s) displaying pattern. 
                             // 0: display pattern on row
                             // 1: do NOT display pattern on row
     unsigned short adc = ADC;
-    unsigned short x, y;
+    static unsigned long long x, y;
+    static unsigned char axis = 1;
+    static unsigned char dir = 0x00; // b3..0 = up down left right
     
     // Transitions
     switch (state) {
@@ -101,65 +104,47 @@ int Snake_Tick(int state) { // f7, 02
     }    
     // Actions
     switch (state) {
-		case shift:
-			ADMUX = 0b00001;
-			y = ADC;
-			ADMUX = 0b00010;
-			x = ADC;
+    	case shift:
+    		if(axis == 1) {
+    			ADMUX = (ADMUX & 0xE0) | axis;
+				//ADMUX = axis;
+				y = adc;
+				axis = 2;
+			}
+			else if(axis == 2) {
+				ADMUX = (ADMUX & 0xE0) | axis;
+				x = adc;
+				axis = 1;
+			}
+			unsigned char* str;
+			sprintf(str, "%d", y);
+			LCD_DisplayString(1, str);
 			
-			if(y < 263) {
-				//col = 0xFF;
-				row >>= 1;
-				if(263 < x && x < 790 && row != 0x01) {
-					row >>= 1;
-				}
+			if(y > 1006 && axis == 1 && dir == 0x00) {
+				// down
+				row = (row != 0x80) ? row << 1 : row;
+				dir = 0x04;
 			}
-			else if(790 < y) {
-				if(263 < x && x < 790 && row != 0x80) {
-					row <<= 1;
-				}
+			else if(y < 32 && axis == 1 && dir == 0x00) {
+				// up
+				row = (row != 0x01) ? row >> 1 : row;
+				dir = 0x08;
 			}
-			else { // y in middle region
-				if(x < 263 && col != 0x01) {
-					col >>= 1;
-				}
-				else if(790 < x && col != 0x80) {
-					col <<= 1;
-				}
+			else if(x > 1006 && axis == 2 && dir == 0x00) {
+				// left
+				col = (col != 0x80) ? col << 1 : col;
+				dir = 0x02;
 			}
-			transmit_cdata(col);
-			transmit_rdata(row);
-			/*
-			ADMUX = 0b00001;
-			if(adc < 263) {
-				if(col != 0x01) {
-					//col >>= 1;
-					y = 527 - adc;
-				}
-				//moved = 1;
+			else if(x < 32 && axis == 2 && dir == 0x00) {
+				// right
+				col = (col != 0x01) ? col >> 1 : col;
+				dir = 0x01;
 			}
-			else if(adc > 790) {
-				//LCD_WriteData('0');
-				if(col != 0x80){
-					col <<= 1;
-				}
-				//moved = 1;
+			else if(250 < y && y < 750 && 250 < x && x < 750) {
+				dir = 0x0;
 			}
-			ADMUX = 0b00010;
-			if(!moved) {
-				if(adc < 263) {
-					if(row != 0x01) {
-						row >>= 1;
-					}
-				}
-				else if(adc > 790) {
-					if(row != 0x80) {
-						row <<= 1;
-					}
-				}
-			}
-            */
-            break;
+			else {}
+    	break;
         default:
 		    break;
     }
@@ -173,6 +158,9 @@ int Output_Tick(int state) {
 	//transmit_cdata(col);
     //transmit_rdata(row);
     
+    transmit_cdata(col);
+	transmit_rdata(row);
+    
 	return state;
 }
 
@@ -185,9 +173,12 @@ int main(void) {
 	
     /* Insert your solution below */
     ADC_init();
-    //LCD_init();
+    LCD_init();
     //LCD_WriteData('9');
+    LCD_ClearScreen();
+    LCD_WriteData(9 + '0');
     //LCD_DisplayString(1, "Hello World");
+    
     
     static task task1, task2;
     task *tasks[] = { &task1, &task2 }; 
@@ -197,7 +188,7 @@ int main(void) {
     
     // Task 1 (Snake Spot)
     task1.state = shift; 
-    task1.period = period * 100;
+    task1.period = period * 2;
     task1.elapsedTime = task1.period;
     task1.TickFct = &Snake_Tick;
     
@@ -226,5 +217,6 @@ int main(void) {
 		while(!TimerFlag);
 		TimerFlag = 0;
     }
+    
     return 1;
 }
