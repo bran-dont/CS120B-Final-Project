@@ -14,6 +14,7 @@
 #include "io.h"			// LCD
 #include "timer.h"		// timer
 #include "scheduler.h"	// task struct
+#include "snake.h"		// snake data
 #ifdef _SIMULATE_
 #include "simAVRHeader.h"
 #endif
@@ -80,19 +81,14 @@ void transmit_rdata(unsigned char data) {
 	//PORTD = 0x00;
 }
 
-unsigned char col = 0x08;    // LED col
-unsigned char row = 0x10;    // LED row 
-enum Snake_States { shift };
-int Snake_Tick(int state) { // f7, 02
+unsigned char dir = 0x00;	// direction of snake head by input, b3..0 = up down left right
+enum Input_States { shift };
+int Input_Tick(int state) { // f7, 02
 	// Local Variables
-    //static unsigned char col = 0x08;    // LED pattern - 0: LED off; 1: LED on
-    //static unsigned char row = 0x10;      // Row(s) displaying pattern. 
-                            // 0: display pattern on row
-                            // 1: do NOT display pattern on row
     unsigned short adc = ADC;
-    static unsigned long long x, y;
+    static unsigned long x, y;
     static unsigned char axis = 1;
-    static unsigned char dir = 0x00; // b3..0 = up down left right
+    //static unsigned char dir = 0x00; // b3..0 = up down left right
     
     // Transitions
     switch (state) {
@@ -107,7 +103,6 @@ int Snake_Tick(int state) { // f7, 02
     	case shift:
     		if(axis == 1) {
     			ADMUX = (ADMUX & 0xE0) | axis;
-				//ADMUX = axis;
 				y = adc;
 				axis = 2;
 			}
@@ -116,48 +111,65 @@ int Snake_Tick(int state) { // f7, 02
 				x = adc;
 				axis = 1;
 			}
-			unsigned char* str;
-			sprintf(str, "%d", y);
-			LCD_DisplayString(1, str);
 			
 			if(y > 1006 && axis == 1 && dir == 0x00) {
 				// down
-				row = (row != 0x80) ? row << 1 : row;
+				//row = (row != 0x80) ? row << 1 : row;
 				dir = 0x04;
 			}
 			else if(y < 32 && axis == 1 && dir == 0x00) {
 				// up
-				row = (row != 0x01) ? row >> 1 : row;
+				//row = (row != 0x01) ? row >> 1 : row;
 				dir = 0x08;
 			}
 			else if(x > 1006 && axis == 2 && dir == 0x00) {
 				// left
-				col = (col != 0x80) ? col << 1 : col;
+				//col = (col != 0x80) ? col << 1 : col;
 				dir = 0x02;
 			}
 			else if(x < 32 && axis == 2 && dir == 0x00) {
 				// right
-				col = (col != 0x01) ? col >> 1 : col;
+				//col = (col != 0x01) ? col >> 1 : col;
 				dir = 0x01;
 			}
 			else if(250 < y && y < 750 && 250 < x && x < 750) {
-				dir = 0x0;
+				dir = 0x00;
 			}
 			else {}
-    	break;
+			
+			if(dir != 0x00) { updateDir(dir); }
+			
+			//unsigned char* str;
+			//sprintf(str, "%d", dir);
+			//LCD_DisplayString(1, dir);
+			//LCD_ClearScreen();
+			//LCD_WriteData(dir + '0');
+    		break;
         default:
 		    break;
     }
     
     return state;
+}
 
+unsigned char col = 0x08;	// LED col
+unsigned char row = 0x10;	// LED row 
+enum Move_States { MS_move };
+int Move_Tick(int state) {
+	
+	struct pixel display = move();
+	row = display.row;
+	col = display.col;
+	LCD_ClearScreen();
+	LCD_WriteData(row + '0');
+	LCD_WriteData(' ');
+	LCD_WriteData(col + '0');
+	
+	return state;
 }
 
 enum Output_States { output };
 int Output_Tick(int state) {
-	//transmit_cdata(col);
-    //transmit_rdata(row);
-    
     transmit_cdata(col);
 	transmit_rdata(row);
     
@@ -174,29 +186,32 @@ int main(void) {
     /* Insert your solution below */
     ADC_init();
     LCD_init();
-    //LCD_WriteData('9');
     LCD_ClearScreen();
-    LCD_WriteData(9 + '0');
-    //LCD_DisplayString(1, "Hello World");
+    Snake_init();
     
-    
-    static task task1, task2;
-    task *tasks[] = { &task1, &task2 }; 
+    static task task1, task2, task3;
+    task *tasks[] = { &task1, &task2, &task3 }; 
     const unsigned short numTasks = sizeof(tasks)/sizeof(*tasks);
     unsigned short period = 1;
     unsigned char i;
     
-    // Task 1 (Snake Spot)
+    // Task 1 (ADC Inputs)
     task1.state = shift; 
     task1.period = period * 2;
     task1.elapsedTime = task1.period;
-    task1.TickFct = &Snake_Tick;
+    task1.TickFct = &Input_Tick;
+    
+    // Task 2 (Move Snake)
+    task2.state = MS_move;
+    task2.period = period * 1000;
+    task2.elapsedTime = task2.period;
+    task2.TickFct = &Move_Tick;
     
     // Task 2 (Display Output)
-    task2.state = output;
-    task2.period = period;
-    task2.elapsedTime = task2.period;
-    task2.TickFct = &Output_Tick;
+    task3.state = output;
+    task3.period = period;
+    task3.elapsedTime = task3.period;
+    task3.TickFct = &Output_Tick;
     
     unsigned long GCD = tasks[0]->period;
     for(i = 1; i < numTasks; i++) {
