@@ -56,6 +56,8 @@ struct pixel move() {
 	}
 	//for(i = 1; i < length; i++) {	
 	//}
+	head = snake[0];
+	
 	struct pixel display = { 0x00, 0x00 };
 	for(i = 0; i < length; i++) {
 		display.row |= snake[i].row;
@@ -98,6 +100,15 @@ void movePixel() {
 			
 		
 	}
+}
+
+//Functionality - checks if head has collided with a specific pixel (namely food)
+//Parameter: N/A
+//Returns: bool - 1 if true, 0 if false
+unsigned char foodCollision(const unsigned char r, const unsigned char c) { 
+	//return 1;
+	return ((snake[0].row == r) && (snake[0].col == c)); 
+	//return snake[0].col;
 }
 
 //Functionality - extends length of snake after consuming food

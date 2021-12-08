@@ -154,16 +154,37 @@ int Input_Tick(int state) { // f7, 02
 
 unsigned char col = 0x08;	// LED col
 unsigned char row = 0x10;	// LED row 
+
+unsigned char fcol = 0x20;
+unsigned char frow = 0x10;
+
 enum Move_States { MS_move };
 int Move_Tick(int state) {
 	
 	struct pixel display = move();
 	row = display.row;
 	col = display.col;
-	LCD_ClearScreen();
-	LCD_WriteData(row + '0');
+	
+	
+	if(foodCollision(frow, fcol)) {
+		LCD_WriteData('1');
+		frow = (0x01 << (rand() % 8)); // random number between 0 and 7
+		fcol = (0x01 << (rand() % 8));
+	}
+	
+	
+	unsigned char* str;
+	sprintf(str, "%d", foodCollision(frow, fcol));
+	//unsigned char* str2;
+	//sprintf(str, "%d", frow);
+	LCD_DisplayString(1, str);
+	
+	//LCD_ClearScreen();
+	/*
+	LCD_WriteData(frow + '0');
 	LCD_WriteData(' ');
-	LCD_WriteData(col + '0');
+	LCD_WriteData(fcol + '0');
+	*/
 	
 	return state;
 }
@@ -172,6 +193,15 @@ enum Output_States { output };
 int Output_Tick(int state) {
     transmit_cdata(col);
 	transmit_rdata(row);
+	
+	transmit_cdata(0x00);
+	transmit_rdata(0x00);
+	
+	transmit_cdata(fcol);
+	transmit_rdata(frow);
+	
+	transmit_cdata(0x00);
+	transmit_rdata(0x00);
     
 	return state;
 }
@@ -188,6 +218,7 @@ int main(void) {
     LCD_init();
     LCD_ClearScreen();
     Snake_init();
+    srand(time(0));
     
     static task task1, task2, task3;
     task *tasks[] = { &task1, &task2, &task3 }; 
