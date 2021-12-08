@@ -90,16 +90,11 @@ void updateDir(unsigned char dir) {
 	}
 }
 
-//Functionality - moves snake forward in direction
+//Functionality - determine game loss
 //Parameter: N/A
-//Returns: N/A
-void movePixel() {
-	struct pixel temp = head;
-	
-	for(unsigned char i = 0; i < length; i++) {
-			
-		
-	}
+//Returns: 1 if game fail, 0 if not
+unsigned char failCollision() {
+	return head.col == 0x00 || head.row == 0x00;
 }
 
 //Functionality - checks if head has collided with a specific pixel (namely food)
